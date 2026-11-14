@@ -8,7 +8,10 @@
 (function () {
   'use strict';
 
-  var TEX_URL = '/assets/img/oak-texture.webp';
+  // relative to this script, so it works at the site root and inside a preview subfolder
+  var TEX_URL = (function () {
+    try { return new URL('../img/oak-texture.webp', document.currentScript.src).href; } catch (_e) { return '/assets/img/oak-texture.webp'; }
+  })();
   var OAK_COLS = [[14, 230], [258, 410], [438, 586], [614, 786]]; // board columns inside the texture (900 × 1495)
   var TEX_H = 1495;
 
@@ -481,5 +484,5 @@
     try { return c.toDataURL('image/webp', 0.86); } catch (_e) { return ''; }
   }
 
-  window.MerakiFloor = { create: create, swatch: swatch, load: loadOak, materials: MATS };
+  window.MerakiFloor = { create: create, swatch: swatch, load: loadOak, materials: MATS, texture: TEX_URL };
 })();

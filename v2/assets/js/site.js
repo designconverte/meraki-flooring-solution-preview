@@ -116,7 +116,7 @@
       resizeFloor = setTimeout(function () { floor.redraw(); }, 160);
     });
   } else if (plane) {
-    plane.style.background = '#2A2B2B url("/assets/img/oak-texture.webp") 0 0 / 360px auto repeat';
+    plane.classList.add('floor__plane--static');
   }
 
   /* raking light: the installer's low light that shows the grain; follows a fine pointer */

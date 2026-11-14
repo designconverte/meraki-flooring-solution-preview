@@ -111,7 +111,7 @@ button { font: inherit; color: inherit; }
     linear-gradient(180deg, var(--mk-ink) 0%, var(--mk-ink) 9%, rgb(28 29 29 / .78) 22%, rgb(28 29 29 / .2) 50%, rgb(28 29 29 / 0) 72%),
     radial-gradient(120% 90% at 50% 100%, transparent 40%, rgb(28 29 29 / .62) 100%); }
 .floor__plane { position: absolute; left: -45%; width: 190%; bottom: 0; height: 300%; transform-origin: 50% 100%; transform: rotateX(var(--rx, 66deg)) rotateZ(var(--rz, 0deg)); will-change: transform; background: #2A2B2B; }
-.no-js .floor__plane { background: #2A2B2B url("/meraki-flooring-solution-preview/v2/assets/img/oak-texture.webp") 0 0 / 360px auto repeat; }
+.no-js .floor__plane, .floor__plane--static { background: #2A2B2B url("../img/oak-texture.webp") 0 0 / 360px auto repeat; }
 .floor__cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .floor__rake { position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: soft-light; transition: opacity 600ms linear;
   background: radial-gradient(circle at var(--lx, 50%) var(--ly, 85%), rgb(255 244 222 / .9) 0, rgb(255 244 222 / .35) 5%, rgb(255 244 222 / 0) 14%); }
