@@ -1,6 +1,6 @@
-/* Meraki Flooring Solution: page motion and UI.
+/* Meraki Flooring Solution · home V2: page motion and UI.
    Everything is visible in the HTML first; motion starts from that final state (gsap.from with clearProps).
-   Libraries are optional: without GSAP, ScrollTrigger or Lenis the page still works and shows everything. */
+   Libraries are optional: without GSAP, ScrollTrigger, Lenis or the floor engine the page still works and shows everything. */
 (function () {
   'use strict';
 
@@ -14,6 +14,7 @@
   var hasST = hasGsap && typeof window.ScrollTrigger !== 'undefined';
   var gsap = window.gsap;
   if (hasST) gsap.registerPlugin(window.ScrollTrigger);
+  var MF = window.MerakiFloor || null;
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -32,98 +33,124 @@
       requestAnimationFrame(raf);
     }
   }
+  function scrollToY(y) {
+    if (lenis) lenis.scrollTo(y);
+    else window.scrollTo({ top: y, behavior: reduce ? 'auto' : 'smooth' });
+  }
   function scrollToEl(el, offset) {
     if (!el) return;
-    if (lenis) lenis.scrollTo(el, { offset: offset || -100 });
-    else el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    scrollToY(Math.max(0, el.getBoundingClientRect().top + window.scrollY + (offset || -100)));
   }
 
-  /* ── header: solid after the hero, hides on fast scroll down ── */
+  /* ── header: transparent over the dark hero, paper after it, hides on fast scroll down ── */
   var hdr = $('[data-hdr]');
-  var hero = $('.hero');
+  var hero = $('[data-hero]');
   var lastY = window.scrollY;
   function onScrollHeader() {
     if (!hdr) return;
     var y = window.scrollY;
-    var limit = hero ? Math.max(80, (isDesktop() ? 60 : hero.querySelector('.hero__media').offsetHeight - 70)) : 60;
+    var formBox = $('[data-hero-form]');
+    var limit = !hero ? 60 : isDesktop() || !formBox ? Math.max(80, hero.offsetHeight - 72) : Math.max(60, formBox.getBoundingClientRect().top + y - 72);
     hdr.classList.toggle('is-solid', y > limit);
     var menuOpen = doc.classList.contains('menu-open');
-    hdr.classList.toggle('is-hidden', !menuOpen && y > 700 && y > lastY + 4);
-    if (y < lastY - 4 || y < 700) hdr.classList.remove('is-hidden');
+    hdr.classList.toggle('is-hidden', !menuOpen && y > 900 && y > lastY + 4);
+    if (y < lastY - 4 || y < 900) hdr.classList.remove('is-hidden');
     lastY = y;
   }
   window.addEventListener('scroll', onScrollHeader, { passive: true });
   onScrollHeader();
 
-  /* ── hero: diagonal cut measured from the copy column, herringbone row placed along it ── */
-  var seam = $('[data-seam]');
-  function layoutHero() {
-    if (!hero) return;
-    var hb = hero.getBoundingClientRect();
-    var W = hb.width;
-    var media = $('.hero__media', hero);
-    var p1, p2, stripW;
-    if (isDesktop()) {
-      var copy = $('.hero__copy', hero).getBoundingClientRect();
-      var form = $('.hero__form', hero).getBoundingClientRect();
-      var cutBot = Math.min(copy.right - hb.left + 40, form.left - hb.left - 24);
-      var cutTop = Math.min(cutBot + W * 0.12, form.left - hb.left + 40);
-      hero.style.setProperty('--cut-top', cutTop + 'px');
-      hero.style.setProperty('--cut-bot', cutBot + 'px');
-      p1 = { x: cutTop, y: -20 };
-      p2 = { x: cutBot, y: hb.height + 20 };
-      stripW = 80;
-    } else {
-      var h1 = $('.hero__h1', hero);
-      var band = h1.getBoundingClientRect().bottom - hb.top + 56;
-      hero.style.setProperty('--band', Math.round(band) + 'px');
-      p1 = { x: -20, y: band - 34 - 16 };
-      p2 = { x: W + 20, y: band - 14 };
-      stripW = 34;
-      void media;
+  /* ── swatches: every [data-swatch] gets its material painted by the floor engine ── */
+  var swCache = {};
+  function swatchUrl(mat, size) {
+    if (!MF) return '';
+    var key = mat + ':' + size;
+    if (!swCache[key]) {
+      var dims = size === 'big' ? [420, 336, 16] : size === 'room' ? [240, 240, 9] : [132, 92, 7];
+      swCache[key] = MF.swatch(mat, dims[0], dims[1], dims[2]);
     }
-    if (!seam) return;
-    var dx = p2.x - p1.x, dy = p2.y - p1.y;
-    var len = Math.sqrt(dx * dx + dy * dy);
-    var ang = Math.atan2(-dx, dy) * 180 / Math.PI;
-    var mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-    seam.style.setProperty('--seam-w', stripW + 'px');
-    seam.style.setProperty('--seam-l', len + 'px');
-    seam.style.setProperty('--seam-x', (mx - stripW / 2) + 'px');
-    seam.style.setProperty('--seam-y', (my - len / 2) + 'px');
-    seam.style.setProperty('--seam-a', ang + 'deg');
-    seam.classList.add('is-placed');
+    return swCache[key];
   }
-  layoutHero();
-  var resizeT;
-  window.addEventListener('resize', function () {
-    clearTimeout(resizeT);
-    resizeT = setTimeout(function () { layoutHero(); if (hasST) window.ScrollTrigger.refresh(); }, 120);
-  });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutHero);
+  function paintSwatches(root, size) {
+    $$('[data-swatch]', root).forEach(function (el) {
+      var big = el.hasAttribute('data-swatch-big');
+      if ((size === 'big') !== big) return;
+      var url = swatchUrl(el.getAttribute('data-swatch'), size);
+      if (url) el.style.backgroundImage = 'url("' + url + '")';
+    });
+  }
 
-  /* signature: the row lays leg by leg, then one finish pass over the photo */
-  if (hero && seam && !reduce) {
-    var start = function () {
-      seam.classList.add('is-laying');
-      var visible = Math.ceil(parseFloat(getComputedStyle(seam).height) / (parseFloat(getComputedStyle(seam).width) / 158 * 60)) * 2;
-      var step = 26;
-      setTimeout(function () { hero.classList.add('is-finished'); }, 260 + Math.min(visible, 90) * step * 0.7);
-    };
-    requestAnimationFrame(function () { requestAnimationFrame(start); });
+  /* ── 1 · the floor: plan-view canvas tilted in 3D; the form's floor choice lays a new floor ── */
+  var floorEl = $('[data-floor]');
+  var plane = $('[data-floor-plane]');
+  var canvas = $('[data-floor-canvas]');
+  var heroForm = $('#quote-hero');
+  var floor = null;
+  var floorName = $('[data-floor-name]'), floorSrc = $('[data-floor-src]');
+  function floorCaption(mat) {
+    if (!MF || !floorName) return;
+    var m = MF.materials[mat] || MF.materials['hardwood-installation'];
+    floorName.textContent = m.label;
+    if (floorSrc) floorSrc.textContent = m.real ? 'Wood from a Meraki job' : 'Illustration';
+  }
+  function viewWindow() {
+    if (!plane || !floorEl) return [0, 1];
+    var pl = plane.offsetLeft, pw = plane.offsetWidth, fw = floorEl.offsetWidth;
+    return [Math.max(0, -pl / pw), Math.min(1, (-pl + fw) / pw)];
+  }
+  if (MF && canvas && hero) {
+    floor = MF.create(canvas, { unit: function () { return isDesktop() ? 30 : 18; }, view: viewWindow() });
+    MF.load().then(function () {
+      paintSwatches(document, 'small');
+      var start = function () {
+        floor.lay('hardwood-installation', { fresh: true, instant: reduce, dur: 0.55, done: function () { if (!reduce) hero.classList.add('is-finished'); } });
+      };
+      if (reduce) start(); else requestAnimationFrame(function () { requestAnimationFrame(start); });
+    });
+    var resizeFloor;
+    var lastW = window.innerWidth;
+    window.addEventListener('resize', function () {
+      if (Math.abs(window.innerWidth - lastW) < 2) return; // mobile URL bar: ignore height-only resizes
+      lastW = window.innerWidth;
+      clearTimeout(resizeFloor);
+      resizeFloor = setTimeout(function () { floor.redraw(); }, 160);
+    });
+  } else if (plane) {
+    plane.classList.add('floor__plane--static');
+  }
+
+  /* raking light: the installer's low light that shows the grain; follows a fine pointer */
+  if (hero && floorEl && finePointer && !reduce) {
+    var rake = $('[data-rake]');
+    hero.addEventListener('pointermove', function (e) {
+      var r = floorEl.getBoundingClientRect();
+      if (e.clientY < r.top - 40) { hero.classList.remove('is-raking'); return; }
+      var fx = (e.clientX - r.left) / r.width;
+      var fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+      var pl = plane.offsetLeft / floorEl.offsetWidth, pw = plane.offsetWidth / floorEl.offsetWidth;
+      rake.style.setProperty('--lx', ((fx - pl) / pw * 100).toFixed(2) + '%');
+      rake.style.setProperty('--ly', (100 - Math.pow(1 - fy, 0.55) * 42).toFixed(2) + '%');
+      hero.classList.add('is-raking');
+      if (hasGsap) gsap.to(plane, { '--rz': ((fx - 0.5) * -2.4).toFixed(2) + 'deg', duration: 0.8, ease: 'power2.out', overwrite: 'auto' });
+    });
+    hero.addEventListener('pointerleave', function () { hero.classList.remove('is-raking'); });
+  }
+
+  /* scroll: the camera lowers as the hero leaves */
+  if (hasST && !reduce && plane) {
+    gsap.fromTo(plane, { '--rx': '66deg' }, { '--rx': '75deg', ease: 'none', scrollTrigger: { trigger: hero, start: 'top top', end: 'bottom top', scrub: 0.5 } });
   }
 
   /* hero intro: H1 sentences rise from their masks, then the supporting lines */
   if (hasGsap && !reduce && hero) {
-    gsap.from($$('.hero__h1 .ln > span', hero), { yPercent: 108, duration: 1.15, ease: 'expo.out', stagger: 0.12, delay: 0.15, clearProps: 'transform' });
-    gsap.from($$('[data-intro]', hero), { y: 22, opacity: 0, duration: 1, ease: 'expo.out', stagger: 0.07, delay: 0.35, clearProps: 'transform,opacity' });
+    gsap.from($$('.hero__h1 .ln > span', hero), { yPercent: 108, duration: 1.15, ease: 'expo.out', stagger: 0.12, delay: 0.1, clearProps: 'transform' });
+    gsap.from($$('[data-intro]', hero), { y: 22, opacity: 0, duration: 1, ease: 'expo.out', stagger: 0.07, delay: 0.3, clearProps: 'transform,opacity' });
   }
 
   /* ── reveals ── */
   if (hasST && !reduce) {
     $$('[data-reveal]').forEach(function (group) {
-      var kids = group.children;
-      gsap.from(kids, { y: 32, opacity: 0, duration: 1, ease: 'expo.out', stagger: 0.08, clearProps: 'transform,opacity',
+      gsap.from(group.children, { y: 32, opacity: 0, duration: 1, ease: 'expo.out', stagger: 0.08, clearProps: 'transform,opacity',
         scrollTrigger: { trigger: group, start: 'top 85%', once: true } });
     });
     $$('[data-reveal-title]').forEach(function (el) {
@@ -132,15 +159,22 @@
     });
   }
 
-  /* ── tape measure runs with the scroll ── */
+  /* ── 2 · tape measure runs with the scroll ── */
   var tape = $('[data-tape-track]');
   if (tape && hasST && !reduce) {
     gsap.fromTo(tape, { x: 0 }, { x: function () { return -(tape.scrollWidth / 2); }, ease: 'none',
-      scrollTrigger: { trigger: '[data-tape]', start: 'top bottom', end: '+=1600', scrub: 0.6, invalidateOnRefresh: true } });
+      scrollTrigger: { trigger: '[data-tape]', start: 'top bottom', end: '+=1800', scrub: 0.6, invalidateOnRefresh: true } });
   }
 
-  /* ── counters (the HTML already holds the final value) ── */
+  /* ── 3 · the box lands; the label prints line by line; counters ── */
   if (hasST && !reduce) {
+    var box = $('[data-box]');
+    if (box) gsap.from(box, { y: -60, rotate: -2.5, duration: 1.1, ease: 'back.out(1.6)', clearProps: 'transform', scrollTrigger: { trigger: box, start: 'top 80%', once: true } });
+    var label = $('[data-label]');
+    if (label) {
+      gsap.from(label.querySelectorAll('.label__top, .label__row, .label__foot'), { clipPath: 'inset(0 0 100% 0)', y: -6, duration: 0.5, ease: 'steps(6)', stagger: 0.16, clearProps: 'clipPath,transform',
+        scrollTrigger: { trigger: label, start: 'top 82%', once: true } });
+    }
     $$('[data-count]').forEach(function (el) {
       var end = parseInt(el.getAttribute('data-count'), 10);
       if (!(end > 1)) return;
@@ -150,48 +184,217 @@
     });
   }
 
-  /* ── manifesto: words light up with the scroll, like a finish coat passing ── */
-  var words = $('[data-words]');
-  if (words && hasST && !reduce) {
-    $$('.mani__l', words).forEach(function (line) {
-      var parts = line.innerHTML.split(/(\s+)/);
-      line.innerHTML = parts.map(function (p) { return /^\s+$/.test(p) ? p : '<span class="mani__w">' + p + '</span>'; }).join('');
-    });
-    var ws = $$('.mani__w', words);
-    window.ScrollTrigger.create({
-      trigger: words, start: 'top 80%', end: 'bottom 45%', scrub: true,
-      onUpdate: function (self) {
-        var lit = self.progress * (ws.length + 3);
-        for (var i = 0; i < ws.length; i++) {
-          var o = Math.min(1, Math.max(0.22, lit - i));
-          ws[i].style.setProperty('--o', o.toFixed(2));
-        }
+  /* ── 4 · the chalk line snaps across "lowest price"; "value" gets its board ── */
+  var chalk = $('[data-chalk]');
+  var value = $('.mani__value');
+  if (chalk) {
+    var snap = function () {
+      chalk.classList.add('is-snapped');
+      if (value) setTimeout(function () { value.style.setProperty('--v', '1'); }, reduce ? 0 : 1100);
+    };
+    if (value && !reduce) value.style.setProperty('--v', '0');
+    if (hasST && !reduce) window.ScrollTrigger.create({ trigger: chalk, start: 'top 68%', once: true, onEnter: snap });
+    else snap();
+  }
+
+  /* ── 5 · the gallery: each row is tapped tight, joints close as it enters (desktop) ── */
+  if (hasST && !reduce) {
+    window.ScrollTrigger.matchMedia({
+      '(min-width: 1024px)': function () {
+        $$('.planks__row').forEach(function (row) {
+          var dir = parseFloat(row.getAttribute('data-row')) || 1;
+          gsap.fromTo(row, { '--gap': '56px', x: dir * 90 }, { '--gap': '10px', x: 0, ease: 'none',
+            scrollTrigger: { trigger: row, start: 'top bottom', end: 'top 40%', scrub: 0.6 } });
+        });
       }
     });
   }
 
-  /* ── services: preview follows the cursor; a click preselects the floor in the hero form ── */
-  var svcList = $('[data-svc]');
-  if (svcList && finePointer) {
-    svcList.addEventListener('pointermove', function (e) {
-      var row = e.target.closest('.svc__row');
-      if (!row) return;
-      var r = row.getBoundingClientRect();
-      row.style.setProperty('--mx', (e.clientX - r.left) + 'px');
-      row.style.setProperty('--my', (e.clientY - r.top) + 'px');
-    });
+  /* ── 6 · the sample rack: faces painted when near, samples swing on their hooks and settle ── */
+  var rack = $('[data-rack]');
+  if (rack) {
+    var paintRack = function () { paintSwatches(rack, 'big'); };
+    if ('IntersectionObserver' in window) {
+      var rio = new IntersectionObserver(function (es) {
+        if (es.some(function (e) { return e.isIntersecting; })) {
+          rio.disconnect();
+          if (MF) MF.load().then(paintRack);
+        }
+      }, { rootMargin: '600px 0px' });
+      rio.observe(rack);
+    } else if (MF) MF.load().then(paintRack);
+    if (hasST && !reduce) {
+      $$('.rack__row', rack).forEach(function (row) {
+        var items = $$('.smp', row);
+        gsap.from(items, { rotate: function (i) { return i % 2 ? 9 : -9; }, y: -14, duration: 1.7, ease: 'elastic.out(1, 0.35)', stagger: 0.09, clearProps: 'transform',
+          scrollTrigger: { trigger: row, start: 'top 82%', once: true } });
+      });
+    }
   }
-  function goEstimate(service) {
-    var heroForm = $('#quote-hero');
+
+  /* ── 7 · process: the plan builds itself while the steps scroll ── */
+  var scene = $('[data-scene]');
+  var steps = $$('[data-step]');
+  if (scene && steps.length && hasST && !reduce) {
+    var sn = $('[data-scene-n]'), st = $('[data-scene-t]');
+    scene.setAttribute('data-s', '0');
+    var setStep = function (n) {
+      scene.setAttribute('data-s', String(n));
+      steps.forEach(function (s, i) { s.classList.toggle('is-on', i < n); });
+      if (sn) sn.textContent = '0' + Math.max(1, n);
+      if (st) st.textContent = steps[Math.max(0, n - 1)].getAttribute('data-t');
+    };
+    steps.forEach(function (s, i) {
+      window.ScrollTrigger.create({ trigger: s, start: isDesktop() ? 'top 62%' : 'top 75%', onEnter: function () { setStep(i + 1); }, onLeaveBack: function () { setStep(i); } });
+    });
+  } else {
+    steps.forEach(function (s) { s.classList.add('is-on'); });
+  }
+
+  /* ── 8 · the name rises; the punch list gets its pencil ticks ── */
+  if (hasST && !reduce) {
+    var word = $$('.name__w span');
+    if (word.length) gsap.from(word, { yPercent: 60, opacity: 0, duration: 1.2, ease: 'expo.out', stagger: 0.1, clearProps: 'transform,opacity', scrollTrigger: { trigger: '.name__w', start: 'top 85%', once: true } });
+  }
+  function onceVisible(el, cls, margin) {
+    if (!el) return;
+    if (reduce || !('IntersectionObserver' in window)) { el.classList.add(cls); return; }
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { el.classList.add(cls); io.disconnect(); } });
+    }, { rootMargin: margin || '0px 0px -25% 0px' });
+    io.observe(el);
+  }
+  onceVisible($('[data-punch]'), 'is-on');
+  /* ── 9 · the map: towns drop in a wave from Charlotte ── */
+  onceVisible($('[data-map]'), 'is-on', '0px 0px -20% 0px');
+
+  /* open now? (Charlotte time) */
+  (function () {
+    var els = $$('[data-open-status]');
+    if (!els.length || typeof Intl === 'undefined') return;
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date());
+      var get = function (t) { var p = parts.filter(function (x) { return x.type === t; })[0]; return p ? p.value : ''; };
+      var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      var d = days.indexOf(get('weekday')), h = parseInt(get('hour'), 10) % 24, m = parseInt(get('minute'), 10);
+      var t = h + m / 60;
+      var hours = function (day) { return day >= 1 && day <= 5 ? [8, 18] : day === 6 ? [8, 12] : null; };
+      var today = hours(d), open = !!(today && t >= today[0] && t < today[1]);
+      var text;
+      if (open) text = 'Open now · until ' + (today[1] === 18 ? '6 PM' : '12 PM') + ' in Charlotte';
+      else {
+        var nd = d, label = '';
+        for (var k = 0; k < 8; k++) {
+          var hh = hours(nd);
+          if (hh && (k > 0 || t < hh[0])) { label = k === 0 ? 'today' : k === 1 ? 'tomorrow' : days[nd]; break; }
+          nd = (nd + 1) % 7;
+        }
+        text = 'Closed now · opens ' + label + ' at 8 AM';
+      }
+      els.forEach(function (el) {
+        el.classList.toggle('is-open', open);
+        var tx = $('[data-open-text]', el); if (tx) tx.textContent = text;
+      });
+    } catch (_e) { /* keeps the static hours */ }
+  })();
+
+  /* ── forms: material → floor + swatch vars; step counter; answers composed into "details"; the request ticket ── */
+  var MAT_NAMES = {
+    'hardwood-installation': 'Hardwood', 'lvp-installation': 'LVP', 'laminate-installation': 'Laminate', 'sand-refinish': 'Sand & refinish',
+    'stairs': 'Stairs', 'tile-installation': 'Tile', 'carpet-installation': 'Carpet', 'vct-installation': 'VCT'
+  };
+  function setFormMaterial(form, mat) {
+    if (!mat) return;
+    var ref = $('[data-swatch="' + mat + '"]');
+    form.style.setProperty('--sw-cur', (ref ? getComputedStyle(ref).getPropertyValue('--sw') : '') || '#B88F5E');
+    var url = swatchUrl(mat, 'room');
+    if (url) form.style.setProperty('--mat-img', 'url("' + url + '")');
+  }
+  $$('form[data-cs-form]').forEach(function (form) {
+    var now = $('[data-step-now]', form);
+    var stepEls = $$('[data-cs-step]', form);
+    var details = $('[data-details]', form);
+    var sumBox = $('[data-request-summary]', form);
+    var sumText = $('[data-request-summary-text]', form);
+    var one = function (name) { var el = form.querySelector('[name="' + name + '"]:checked'); return el ? el.value : ''; };
+    var many = function (name) { return $$('[name="' + name + '"]:checked', form).map(function (el) { return el.value; }); };
+    var service = function () { var el = form.querySelector('[name="service"]'); if (!el) return ''; return el.tagName === 'SELECT' ? el.value : one('service'); };
+    function compose() {
+      if (!details) return;
+      var notesEl = form.querySelector('[name="notes"]');
+      var notes = notesEl ? notesEl.value.trim() : '';
+      var parts = [];
+      var rooms = many('rooms');
+      if (rooms.length) parts.push('Rooms: ' + rooms.join(', '));
+      if (one('current')) parts.push('Floor now: ' + one('current'));
+      if (one('timeline')) parts.push('Start: ' + one('timeline'));
+      if (one('reach')) parts.push('Reach by: ' + one('reach'));
+      if (notes) parts.push('Notes: ' + notes);
+      details.value = parts.join(' | ').slice(0, 1000);
+      if (sumBox && sumText) {
+        var zip = (form.querySelector('[name="zip"]') || {}).value || '';
+        var bits = [MAT_NAMES[service()] || '', zip ? 'ZIP ' + zip : '', rooms.join(', '), one('timeline')].filter(Boolean);
+        sumText.textContent = bits.join(' · ');
+        sumBox.hidden = bits.length === 0;
+      }
+    }
+    form.addEventListener('change', function (e) {
+      if (e.target && e.target.name === 'service') {
+        setFormMaterial(form, service());
+        if (form === heroForm && floor && service()) { floor.lay(service(), { dur: 0.5 }); floorCaption(service()); }
+        if (form === heroForm) syncFinal();
+      }
+      if (e.target && e.target.name === 'zip' && form === heroForm) syncFinal();
+      compose();
+    });
+    form.addEventListener('input', compose);
+    form.addEventListener('submit', compose, true);
+    var sync = function () {
+      var visible = stepEls.filter(function (s) { return !s.hidden; })[0];
+      if (!visible) return;
+      var k = visible.getAttribute('data-cs-step');
+      if (now && /^\d$/.test(k)) now.textContent = k;
+      form.classList.toggle('is-done', k === 'done');
+      compose();
+    };
+    if (typeof MutationObserver !== 'undefined') {
+      var mo = new MutationObserver(sync);
+      stepEls.forEach(function (s) { mo.observe(s, { attributes: true, attributeFilter: ['hidden'] }); });
+    }
+    compose();
+  });
+
+  /* the final sentence starts from what the visitor already chose up top (until they touch it) */
+  var finalForm = $('#quote-final');
+  var finalTouched = false;
+  if (finalForm) {
+    finalForm.addEventListener('input', function () { finalTouched = true; });
+    finalForm.addEventListener('change', function () { finalTouched = true; });
+  }
+  function syncFinal() {
+    if (!finalForm || !heroForm || finalTouched) return;
+    var s = heroForm.querySelector('[name="service"]:checked');
+    var z = heroForm.querySelector('[name="zip"]');
+    var fs = finalForm.querySelector('[name="service"]'), fz = finalForm.querySelector('[name="zip"]');
+    if (s && fs) { fs.value = s.value; setFormMaterial(finalForm, s.value); }
+    if (z && fz && /^\d{5}$/.test(z.value)) fz.value = z.value;
+  }
+
+  /* any sample / CTA → the hero form; a floor picked elsewhere is laid in the hero once we're back there */
+  function goEstimate(svc) {
     if (!heroForm) return;
     var onStep1 = !$('[data-cs-step="1"]', heroForm).hidden;
-    if (service && onStep1) {
-      var radio = heroForm.querySelector('input[name="service"][value="' + service + '"]');
-      if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
-    }
-    scrollToEl($('#estimate'), isDesktop() ? -140 : -90);
+    var target = isDesktop() ? 0 : Math.max(0, ($('[data-floor]') || heroForm).getBoundingClientRect().top + window.scrollY - 140);
+    scrollToY(target);
     var zip = $('input[name="zip"]', heroForm);
-    if (onStep1 && zip) setTimeout(function () { zip.focus({ preventScroll: true }); }, reduce ? 0 : 700);
+    var wait = reduce ? 0 : Math.min(1400, 300 + window.scrollY / 4);
+    setTimeout(function () {
+      if (svc && onStep1) {
+        var radio = heroForm.querySelector('input[name="service"][value="' + svc + '"]');
+        if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+      if (onStep1 && zip) zip.focus({ preventScroll: true });
+    }, wait);
   }
   $$('[data-service]').forEach(function (a) {
     a.addEventListener('click', function (e) { e.preventDefault(); goEstimate(a.getAttribute('data-service')); });
@@ -202,33 +405,6 @@
       e.preventDefault(); goEstimate(null);
     });
   });
-
-  /* ── process: the rail of boards fills with the scroll, each step lights when reached ── */
-  var rail = $('[data-rail]');
-  var steps = $$('[data-step]');
-  if (rail && hasST && !reduce) {
-    gsap.fromTo(rail, { scaleY: 0 }, { scaleY: 1, ease: 'none',
-      scrollTrigger: { trigger: '[data-steps]', start: 'top 70%', end: 'bottom 60%', scrub: 0.4 } });
-    steps.forEach(function (s) {
-      window.ScrollTrigger.create({ trigger: s, start: 'top 68%', onEnter: function () { s.classList.add('is-on'); }, onLeaveBack: function () { s.classList.remove('is-on'); } });
-    });
-  } else {
-    steps.forEach(function (s) { s.classList.add('is-on'); });
-  }
-
-  /* ── work: columns at different speeds (desktop) ── */
-  if (hasST && !reduce) {
-    window.ScrollTrigger.matchMedia({
-      '(min-width: 1024px)': function () {
-        $$('.mosaic__col').forEach(function (col) {
-          var sp = parseFloat(col.getAttribute('data-speed')) || 0;
-          gsap.fromTo(col, { y: sp * 4 }, { y: -sp * 4, ease: 'none', scrollTrigger: { trigger: '.mosaic', start: 'top bottom', end: 'bottom top', scrub: true } });
-        });
-      }
-    });
-    var seal = $('[data-seal]');
-    if (seal) gsap.fromTo(seal, { rotate: -50 }, { rotate: 40, ease: 'none', scrollTrigger: { trigger: '.name', start: 'top bottom', end: 'bottom top', scrub: true } });
-  }
 
   /* ── gallery: full-screen dialog with arrows, keys and swipe ── */
   var shots = $$('[data-lb]');
@@ -254,9 +430,7 @@
       lbCount.textContent = (cur + 1) + ' / ' + shots.length;
     };
     shots.forEach(function (b, i) {
-      b.addEventListener('click', function () {
-        opener = b; show(i); dlg.showModal(); if (lenis) lenis.stop();
-      });
+      b.addEventListener('click', function () { opener = b; show(i); dlg.showModal(); if (lenis) lenis.stop(); });
     });
     $('.lb__close', dlg).addEventListener('click', function () { dlg.close(); });
     $('.lb__prev', dlg).addEventListener('click', function () { show(cur - 1); });
@@ -276,63 +450,21 @@
     });
   }
 
-  /* ── forms: step counter, step-2 answers composed into "details", request summary ── */
-  $$('form[data-cs-form]').forEach(function (form) {
-    var now = $('[data-step-now]', form);
-    var stepEls = $$('[data-cs-step]', form);
-    var details = $('[data-details]', form);
-    var sumBox = $('[data-request-summary]', form);
-    var sumText = $('[data-request-summary-text]', form);
-    var val = function (name) { var el = form.querySelector('[name="' + name + '"]:checked'); return el ? el.value : ''; };
-    var label = function (name) { var el = form.querySelector('[name="' + name + '"]:checked'); return el ? el.parentNode.textContent.replace(/\s+/g, ' ').trim() : ''; };
-    function compose() {
-      if (!details) return;
-      var notes = (form.querySelector('[name="notes"]') || {}).value || '';
-      var parts = [];
-      if (val('size')) parts.push('Size: ' + val('size'));
-      if (val('timeline')) parts.push('Start: ' + val('timeline'));
-      if (notes.trim()) parts.push('Notes: ' + notes.trim());
-      details.value = parts.join(' | ').slice(0, 1000);
-      if (sumBox && sumText) {
-        var zip = (form.querySelector('[name="zip"]') || {}).value || '';
-        var bits = [label('service'), zip ? 'ZIP ' + zip : '', label('size'), label('timeline')].filter(Boolean);
-        sumText.textContent = bits.join(' · ');
-        sumBox.hidden = bits.length === 0;
-      }
-    }
-    form.addEventListener('change', compose);
-    form.addEventListener('input', compose);
-    form.addEventListener('submit', compose, true);
-    var sync = function () {
-      var visible = stepEls.filter(function (s) { return !s.hidden; })[0];
-      if (!visible) return;
-      var k = visible.getAttribute('data-cs-step');
-      if (now && /^\d$/.test(k)) now.textContent = k;
-      form.classList.toggle('is-done', k === 'done');
-      if (k === '3') compose();
-    };
-    if (typeof MutationObserver !== 'undefined') {
-      var mo = new MutationObserver(sync);
-      stepEls.forEach(function (s) { mo.observe(s, { attributes: true, attributeFilter: ['hidden'] }); });
-    }
-    compose();
-  });
-
   /* ── mobile bar: after the hero form, hidden while the final form is on screen ── */
   var mbar = $('[data-mbar]');
-  var heroForm = $('[data-hero-form]');
-  var finalForm = $('[data-final-form]');
-  if (mbar && heroForm && 'IntersectionObserver' in window) {
+  var heroFormBox = $('[data-hero-form]');
+  var finalBox = $('[data-final-form]');
+  if (mbar && heroFormBox && 'IntersectionObserver' in window) {
     var pastHero = false, finalOn = false;
     var paint = function () { mbar.classList.toggle('is-on', pastHero && !finalOn); };
     new IntersectionObserver(function (es) {
       es.forEach(function (e) { pastHero = !e.isIntersecting && e.boundingClientRect.top < 0; });
       paint();
-    }).observe(heroForm);
-    if (finalForm) new IntersectionObserver(function (es) {
+    }).observe(heroFormBox);
+    if (finalBox) new IntersectionObserver(function (es) {
       es.forEach(function (e) { finalOn = e.isIntersecting; });
       paint();
-    }, { threshold: 0.15 }).observe(finalForm);
+    }, { threshold: 0.15 }).observe(finalBox);
   }
 
   /* ── mobile menu: focus trapped, Esc closes, focus returns to the button ── */
@@ -356,9 +488,7 @@
     };
     toggle.addEventListener('click', open);
     $('[data-menu-close]', menu).addEventListener('click', function () { close(); });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !menu.hidden) close();
-    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !menu.hidden) close(); });
     menu.addEventListener('keydown', function (e) {
       if (e.key !== 'Tab') return;
       var f = focusables(), first = f[0], last = f[f.length - 1];
@@ -383,10 +513,10 @@
       a.addEventListener('click', function (e) {
         var href = a.getAttribute('href'); var id = href.slice(href.indexOf('#'));
         var t = id.length > 1 ? $(id) : null;
-        if (t) { e.preventDefault(); scrollToEl(t, -90); }
+        if (t) { e.preventDefault(); scrollToEl(t, id === '#top' ? 0 : -90); }
       });
     });
   }
 
-  if (hasST) window.addEventListener('load', function () { layoutHero(); window.ScrollTrigger.refresh(); });
+  if (hasST) window.addEventListener('load', function () { window.ScrollTrigger.refresh(); });
 })();
